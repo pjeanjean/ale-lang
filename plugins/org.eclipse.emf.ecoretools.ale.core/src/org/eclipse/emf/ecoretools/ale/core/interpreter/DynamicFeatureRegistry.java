@@ -22,6 +22,8 @@ import java.util.stream.Collectors;
 import org.eclipse.acceleo.query.runtime.AcceleoQueryEvaluationException;
 import org.eclipse.acceleo.query.runtime.EvaluationResult;
 import org.eclipse.acceleo.query.runtime.IQueryBuilderEngine.AstResult;
+import org.eclipse.acceleo.query.runtime.impl.QueryEvaluationEngine;
+import org.eclipse.acceleo.query.runtime.IQueryEnvironment;
 import org.eclipse.acceleo.query.runtime.IQueryEvaluationEngine;
 import org.eclipse.emf.common.notify.Adapter;
 import org.eclipse.emf.common.notify.Notification;
@@ -29,17 +31,24 @@ import org.eclipse.emf.common.notify.NotificationWrapper;
 import org.eclipse.emf.common.notify.Notifier;
 import org.eclipse.emf.common.util.BasicDiagnostic;
 import org.eclipse.emf.common.util.BasicEList;
+import org.eclipse.emf.common.util.URI;
 import org.eclipse.emf.ecore.EClass;
 import org.eclipse.emf.ecore.EObject;
 import org.eclipse.emf.ecore.EReference;
 import org.eclipse.emf.ecore.EStructuralFeature;
+import org.eclipse.emf.ecore.resource.Resource;
+import org.eclipse.emf.ecore.resource.ResourceSet;
 import org.eclipse.emf.ecore.util.EContentAdapter;
 import org.eclipse.emf.ecore.util.EcoreUtil;
 import org.eclipse.emf.ecoretools.ale.core.interpreter.services.DynamicEObjectServices;
+import org.eclipse.emf.ecoretools.ale.core.parser.visitor.ModelBuilder;
 import org.eclipse.emf.ecoretools.ale.core.interpreter.RuntimeInstanceHelper;
 import org.eclipse.emf.ecoretools.ale.implementation.Attribute;
 import org.eclipse.emf.ecoretools.ale.implementation.ExtendedClass;
 import org.eclipse.emf.ecoretools.ale.implementation.ModelUnit;
+import org.eclipse.emf.transaction.RecordingCommand;
+import org.eclipse.emf.transaction.TransactionalEditingDomain;
+import org.eclipse.emf.transaction.util.TransactionUtil;
 
 /**
  * This class manages dynamic attributes for EObjects.
@@ -51,6 +60,13 @@ public class DynamicFeatureRegistry {
 	
 	Map<EObject,EObject> instanceToRuntime; //instance -> runtime content
 	Map<EObject,EObject> runtimeToInstance;
+	
+	IQueryEnvironment queryEnvironment;
+	
+	private ResourceSet resourceSet;
+	private Resource dynamicResource;
+	private Resource runtimeResource;
+	private Resource definitionsResource;
 	
 	public DynamicFeatureRegistry (List<ModelUnit> allImplemModels, List<EClass> domain){
 		this.allImplemModels = allImplemModels;
@@ -223,7 +239,7 @@ public class DynamicFeatureRegistry {
 		EObject extendedInstance = instanceToRuntime.get(instance);
 		
 		if(extendedInstance == null) {
-			EClass runtimeExtensionClass = baseToRuntime.get(instance.eClass());
+			EClass runtimeExtensionClass = getRuntimeExtensionClass(instance);
 			if(runtimeExtensionClass != null){
 				extendedInstance = EcoreUtil.create(runtimeExtensionClass);
 				instanceToRuntime.put(instance,extendedInstance);
@@ -274,6 +290,13 @@ public class DynamicFeatureRegistry {
 	}
 	
 	/**
+	 * Return the extended class of an instance
+	 */
+	public EClass getRuntimeExtensionClass(EObject instance) {
+		return baseToRuntime.get(instance.eClass());
+	}
+	
+	/**
 	 * If {@link eObject} is an extension, return the corresponding instance.
 	 * Return itself otherwise
 	 */
@@ -290,7 +313,9 @@ public class DynamicFeatureRegistry {
     /**
      * Initialize dynamic feature for each EObject of the model
      */
-    public void dynamicModelConstructor(Set<EObject> model, IQueryEvaluationEngine aqlEngine) {
+    public void dynamicModelConstructor(Set<EObject> model, IQueryEnvironment queryEnvironment) {
+		this.queryEnvironment = queryEnvironment;
+		IQueryEvaluationEngine aqlEngine = new QueryEvaluationEngine(queryEnvironment);
 		model.forEach(obj -> {
 			List<ExtendedClass> extensions = findExtensionFor(obj);
 			init(obj, extensions, aqlEngine);
@@ -313,7 +338,30 @@ public class DynamicFeatureRegistry {
     	scope.put("self", instance);
     	
     	if(extendedInstance != null) {
-    		
+			// Look for the root element of the model
+			if (instance.eContainer() == null && instance.eResource() != null) {
+				this.resourceSet = instance.eResource().getResourceSet();
+				this.dynamicResource = this.resourceSet.createResource(URI.createURI("dummy:/dynamic.xmi"));
+				this.runtimeResource = this.resourceSet.createResource(URI.createURI("dummy:/runtime.xmi"));
+				this.definitionsResource = this.resourceSet.createResource(URI.createURI("dummy:/definitions.xmi"));
+				
+				TransactionalEditingDomain domain = TransactionUtil.getEditingDomain(this.resourceSet);
+				if (domain == null) {
+					domain = TransactionalEditingDomain.Factory.INSTANCE.createEditingDomain(this.resourceSet);
+				}
+				domain.getCommandStack().execute(new RecordingCommand(domain) {
+					@Override
+					protected void doExecute() {
+						// Store the dynamic instance of the root element in a resource
+						dynamicResource.getContents().add(extendedInstance);
+						// Store the runtime package in a resource
+						runtimeResource.getContents().add(extendedInstance.eClass().eContainer());
+						// Store the package of class definitions in a resource
+						definitionsResource.getContents().add(queryEnvironment.getEPackageProvider().getRegisteredEPackages().stream()
+								.filter(p -> p.getNsURI().startsWith(ModelBuilder.RUNTIME_ALE_NSURI)).findFirst().get());
+					}
+				});
+			}
     	}
 		else {
 			//TODO: error

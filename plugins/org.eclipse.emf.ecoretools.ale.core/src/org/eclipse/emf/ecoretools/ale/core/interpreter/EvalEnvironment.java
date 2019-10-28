@@ -44,6 +44,8 @@ import org.eclipse.emf.common.util.BasicDiagnostic;
 import org.eclipse.emf.common.util.Diagnostic;
 import org.eclipse.emf.ecore.EClass;
 import org.eclipse.emf.ecore.EObject;
+import org.eclipse.emf.ecore.resource.ResourceSet;
+import org.eclipse.emf.ecore.resource.impl.ResourceSetImpl;
 import org.eclipse.emf.ecoretools.ale.core.interpreter.services.DynamicEObjectServices;
 import org.eclipse.emf.ecoretools.ale.core.interpreter.services.EvalBodyService;
 import org.eclipse.emf.ecoretools.ale.core.interpreter.services.FactoryService;
@@ -90,11 +92,23 @@ public class EvalEnvironment {
 	 */
 	List<ServiceCallListener> listeners;
 	
+	ResourceSet rs;
+	
+	public ResourceSet getResourceSet() {
+		return this.rs;
+	}
+	
 	public EvalEnvironment (IQueryEnvironment qryEnv, List<ModelUnit> allImplem, DiagnosticLogger logger, List<ServiceCallListener> listeners) {
+		this(qryEnv, allImplem, logger, listeners, new ResourceSetImpl());
+	}
+	
+	public EvalEnvironment (IQueryEnvironment qryEnv, List<ModelUnit> allImplem, DiagnosticLogger logger, List<ServiceCallListener> listeners,
+			ResourceSet rs) {
 		this.qryEnv = qryEnv;
 		this.logger = logger;
 		this.listeners = listeners;
 		registerImplem(allImplem);
+		this.rs = rs;
 		populateEnvironmentWithDefaultServices(null,null);
 	}
 	
@@ -273,7 +287,7 @@ public class EvalEnvironment {
 	 */
 	public void initialize(Set<EObject> model) {
 		try {
-			this.dynamicFeatures.dynamicModelConstructor(model, new QueryEvaluationEngine(qryEnv));
+			this.dynamicFeatures.dynamicModelConstructor(model, qryEnv);
 		} catch (Exception e) {
 			Diagnostic initError = new BasicDiagnostic(
 					Diagnostic.ERROR,

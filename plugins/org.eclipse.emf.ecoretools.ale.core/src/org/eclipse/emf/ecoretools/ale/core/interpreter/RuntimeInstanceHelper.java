@@ -31,6 +31,7 @@ public class RuntimeInstanceHelper {
 	
 	public static final String ALE_RUNTIME = "ALE_RUNTIME_";
 	public static final String ALE_RUNTIME_PKG = "ALE_RUNTIME_PKG";
+	public static final String ALE_RUNTIME_NSURI = "http://ale/runtime/";
 	
 	public static Map<EClass,EClass> getBaseToRuntime(List<ModelUnit> allModelUnits, List<EClass> domain) {
 		
@@ -84,6 +85,7 @@ public class RuntimeInstanceHelper {
 		EClass ePkgClass = EcorePackage.eINSTANCE.getEPackage();
 		EPackage pkg = (EPackage) EcoreUtil.create(ePkgClass);
 		pkg.setName(ALE_RUNTIME_PKG);
+		pkg.setNsURI(ALE_RUNTIME_NSURI);
 		baseToRuntime.values().forEach(cls -> pkg.getEClassifiers().add(cls));
 		
 		return baseToRuntime;

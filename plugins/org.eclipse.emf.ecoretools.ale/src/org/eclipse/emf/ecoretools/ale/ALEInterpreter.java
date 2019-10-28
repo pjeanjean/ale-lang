@@ -281,7 +281,8 @@ public class ALEInterpreter {
 	    	.collect(toList());
 	    registerServices(services);
     	
-    	EvalEnvironment env = new EvalEnvironment(queryEnvironment, allBehaviors, logger, serviceListeners);
+    	EvalEnvironment env = new EvalEnvironment(queryEnvironment, allBehaviors, logger, serviceListeners,
+    			caller.eResource().getResourceSet());
     	List<Object> inputElems = new ArrayList<>();
     	inputElems.add(caller);
     	inputElems.addAll(args);

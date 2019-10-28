@@ -15,6 +15,9 @@ import java.util.List;
 import org.eclipse.acceleo.query.runtime.EvaluationResult;
 import org.eclipse.emf.ecore.EObject;
 import org.eclipse.emf.ecoretools.ale.implementation.Method;
+import org.eclipse.emf.transaction.RecordingCommand;
+import org.eclipse.emf.transaction.TransactionalEditingDomain;
+import org.eclipse.emf.transaction.util.TransactionUtil;
 
 public class ALEEngine {
 	
@@ -24,16 +27,26 @@ public class ALEEngine {
 		this.implemEnv = evalEnv;
 	}
 	
+	EvaluationResult res;
+	
 	public EvaluationResult eval(EObject target, Method mainOp, List<Object> args) {
-		EvaluationResult res;
 		MethodEvaluator evaluator = new MethodEvaluator(new ExpressionEvaluationEngine(implemEnv.getQueryEnvironment(),implemEnv.getListeners()), implemEnv.getFeatureAccess());
-		try {
-			res = evaluator.eval(target,mainOp,args);
+		TransactionalEditingDomain domain = TransactionUtil.getEditingDomain(this.implemEnv.getResourceSet());
+		if (domain == null) {
+			domain = TransactionalEditingDomain.Factory.INSTANCE.createEditingDomain(this.implemEnv.getResourceSet());
 		}
-		catch(CriticalFailure e) {
-			res = new EvaluationResult(null, e.diagnostics);
-			this.implemEnv.logger.notify(e.diagnostics);
-		}
+		domain.getCommandStack().execute(new RecordingCommand(domain) {
+			@Override
+			protected void doExecute() {
+				try {
+					res = evaluator.eval(target,mainOp,args);
+				} catch(CriticalFailure e) {
+					res = new EvaluationResult(null, e.diagnostics);
+					implemEnv.logger.notify(e.diagnostics);
+				}
+			}
+		});
+
 		return res;
 	}
 	
